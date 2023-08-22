@@ -52,9 +52,7 @@ class _ArrayValueDefinition(ValueTypeDefinition):
         """
         Property method used to check the length of a type.
         """
-        if self._length:
-            return self._length
-        return self._min_length
+        return self._length if self._length else self._min_length
 
     @property
     def size_in_bytes(self):

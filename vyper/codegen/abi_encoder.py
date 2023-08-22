@@ -22,10 +22,7 @@ def _deconstruct_complex_type(ir_node):
     else:
         ks = [IRnode.from_list(i, "uint256") for i in range(ir_t.count)]
 
-    ret = []
-    for k in ks:
-        ret.append(get_element_ptr(ir_node, k, array_bounds_check=False))
-    return ret
+    return [get_element_ptr(ir_node, k, array_bounds_check=False) for k in ks]
 
 
 # encode a child element of a complex type
@@ -178,9 +175,9 @@ def abi_encode(dst, ir_node, context, bufsz, returns_len=False):
         return IRnode.from_list(ir_ret, annotation=annotation)
 
     # contains some computation, we need to only do it once.
-    with ir_node.cache_when_complex("to_encode") as (b1, ir_node), dst.cache_when_complex(
-        "dst"
-    ) as (b2, dst):
+    with (ir_node.cache_when_complex("to_encode") as (b1, ir_node), dst.cache_when_complex(
+            "dst"
+        ) as (b2, dst)):
 
         dyn_ofst = "dyn_ofst"  # current offset in the dynamic section
 
@@ -220,7 +217,4 @@ def abi_encode(dst, ir_node, context, bufsz, returns_len=False):
         if abi_t.is_dynamic() and abi_t.is_complex_type():
             dyn_section_start = abi_t.static_size()
             ir_ret = ["with", dyn_ofst, dyn_section_start, ir_ret]
-        else:
-            pass  # skip dyn_ofst allocation if we don't need it
-
         return b1.resolve(b2.resolve(IRnode.from_list(ir_ret, annotation=annotation)))

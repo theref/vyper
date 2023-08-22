@@ -36,7 +36,7 @@ def ir_for_self_call(stmt_expr, context):
     args_ir = pos_args_ir + kw_args_ir
 
     args_tuple_t = TupleType([x.typ for x in args_ir])
-    args_as_tuple = IRnode.from_list(["multi"] + [x for x in args_ir], typ=args_tuple_t)
+    args_as_tuple = IRnode.from_list(["multi"] + list(args_ir), typ=args_tuple_t)
 
     if context.is_constant() and sig.mutability not in ("view", "pure"):
         raise StateAccessViolation(
@@ -69,20 +69,19 @@ def ir_for_self_call(stmt_expr, context):
     # write args to a temporary buffer until all the arguments
     # are fully evaluated.
     if args_as_tuple.contains_self_call:
-        copy_args = ["seq"]
         # TODO deallocate me
         tmp_args_buf = IRnode(
             context.new_internal_variable(dst_tuple_t),
             typ=dst_tuple_t,
             location=MEMORY,
         )
-        copy_args.append(
-            # --> args evaluate here <--
-            make_setter(tmp_args_buf, args_as_tuple)
-        )
-
-        copy_args.append(make_setter(args_dst, tmp_args_buf))
-
+        copy_args = [
+            "seq",
+            *(
+                make_setter(tmp_args_buf, args_as_tuple),
+                make_setter(args_dst, tmp_args_buf),
+            ),
+        ]
     else:
         copy_args = make_setter(args_dst, args_as_tuple)
 

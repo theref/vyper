@@ -131,8 +131,7 @@ def build_primitive_from_abi(name: str, abi: dict) -> InterfacePrimitive:
     events: Dict = {}
 
     names = [i["name"] for i in abi if i.get("type") in ("event", "function")]
-    collisions = set(i for i in names if names.count(i) > 1)
-    if collisions:
+    if collisions := {i for i in names if names.count(i) > 1}:
         collision_list = ", ".join(sorted(collisions))
         raise NamespaceCollision(
             f"ABI '{name}' has multiple functions or events with the same name: {collision_list}"

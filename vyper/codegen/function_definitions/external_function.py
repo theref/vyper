@@ -74,7 +74,7 @@ def _generate_kwarg_handlers(context: Context, sig: FunctionSignature) -> List[A
     def handler_for(calldata_kwargs, default_kwargs):
         calldata_args = sig.base_args + calldata_kwargs
         # create a fake type so that get_element_ptr works
-        calldata_args_t = TupleType(list(arg.typ for arg in calldata_args))
+        calldata_args_t = TupleType([arg.typ for arg in calldata_args])
 
         abi_sig = sig.abi_signature_for_kwargs(calldata_kwargs)
         method_id = _annotated_method_id(abi_sig)
@@ -198,11 +198,7 @@ def generate_ir_for_external_function(code, sig, context, skip_nonpayable_check)
     func_common_ir = ["seq", body, exit]
 
     if sig.is_default_func or sig.is_init_func:
-        ret = ["seq"]
-        # add a goto to make the function entry look like other functions
-        # (for zksync interpreter)
-        ret.append(["goto", sig.external_function_base_entry_label])
-        ret.append(func_common_ir)
+        ret = ["seq", ["goto", sig.external_function_base_entry_label], func_common_ir]
     else:
         ret = kwarg_handlers
         # sneak the base code into the kwarg handler

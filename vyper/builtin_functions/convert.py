@@ -104,11 +104,7 @@ def _bytes_to_num(arg, out_typ, signed):
     else:
         raise CompilerPanic("unreachable")  # pragma: notest
 
-    if signed:
-        ret = sar(num_zero_bits, arg)
-    else:
-        ret = shr(num_zero_bits, arg)
-
+    ret = sar(num_zero_bits, arg) if signed else shr(num_zero_bits, arg)
     annotation = (f"__intrinsic__byte_array_to_num({out_typ})",)
     return IRnode.from_list(ret, annotation=annotation)
 
@@ -352,7 +348,7 @@ def to_decimal(expr, arg, out_typ):
     if isinstance(arg.typ, ByteArrayType):
         arg_typ = arg.typ
         arg = _bytes_to_num(arg, out_typ, signed=True)
-        if arg_typ.maxlen * 8 > 168:
+        if arg_typ.maxlen > 21:
             arg = IRnode.from_list(arg, typ=out_typ)
             arg = clamp_basetype(arg)
 

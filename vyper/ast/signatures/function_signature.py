@@ -105,10 +105,14 @@ class FunctionSignature:
         self.frame_info: Optional[FrameInfo] = None
 
     def __str__(self):
-        input_name = "def " + self.name + "(" + ",".join([str(arg.typ) for arg in self.args]) + ")"
+        input_name = (
+            f"def {self.name}("
+            + ",".join([str(arg.typ) for arg in self.args])
+            + ")"
+        )
         if self.return_type:
-            return input_name + " -> " + str(self.return_type) + ":"
-        return input_name + ":"
+            return f"{input_name} -> {str(self.return_type)}:"
+        return f"{input_name}:"
 
     def set_frame_info(self, frame_info):
         self.frame_info = frame_info
@@ -124,18 +128,21 @@ class FunctionSignature:
     # calculate the abi signature for a given set of kwargs
     def abi_signature_for_kwargs(self, kwargs):
         args = self.base_args + kwargs
-        return self.name + "(" + ",".join([arg.typ.abi_type.selector_name() for arg in args]) + ")"
+        return (
+            f"{self.name}("
+            + ",".join([arg.typ.abi_type.selector_name() for arg in args])
+            + ")"
+        )
 
     @cached_property
     def base_signature(self):
         return self.abi_signature_for_kwargs([])
 
     @property
-    # common entry point for external function with kwargs
     def external_function_base_entry_label(self):
         assert not self.internal
 
-        return self._ir_identifier + "_common"
+        return f"{self._ir_identifier}_common"
 
     @property
     def internal_function_label(self):
@@ -145,7 +152,7 @@ class FunctionSignature:
 
     @property
     def exit_sequence_label(self):
-        return self._ir_identifier + "_cleanup"
+        return f"{self._ir_identifier}_cleanup"
 
     def set_default_args(self):
         """Split base from kwargs and set member data structures"""

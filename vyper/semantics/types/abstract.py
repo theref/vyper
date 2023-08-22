@@ -28,10 +28,7 @@ class AbstractDataType:
 
     def __repr__(self):
         value = super().__repr__()
-        if value == object.__repr__(self):
-            # use `_description` when no parent class overrides the default python repr
-            return self._description
-        return value
+        return self._description if value == object.__repr__(self) else value
 
 
 class ArrayValueAbstractType(AbstractDataType):

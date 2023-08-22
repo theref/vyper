@@ -93,26 +93,24 @@ def set_storage_slots_with_overrides(
             type_.set_reentrancy_key_position(StorageSlot(_slot))
             continue
 
-        # Expect to find this variable within the storage layout override
-        if variable_name in storage_layout_overrides:
-            reentrant_slot = storage_layout_overrides[variable_name]["slot"]
-            # Ensure that this slot has not been used, and prevents other storage variables
-            # from using the same slot
-            reserved_slots.reserve_slot_range(reentrant_slot, 1, variable_name)
-
-            type_.set_reentrancy_key_position(StorageSlot(reentrant_slot))
-
-            ret[variable_name] = {
-                "type": "nonreentrant lock",
-                "slot": reentrant_slot,
-            }
-        else:
+        if variable_name not in storage_layout_overrides:
             raise StorageLayoutException(
                 f"Could not find storage_slot for {variable_name}. "
                 "Have you used the correct storage layout file?",
                 node,
             )
 
+        reentrant_slot = storage_layout_overrides[variable_name]["slot"]
+        # Ensure that this slot has not been used, and prevents other storage variables
+        # from using the same slot
+        reserved_slots.reserve_slot_range(reentrant_slot, 1, variable_name)
+
+        type_.set_reentrancy_key_position(StorageSlot(reentrant_slot))
+
+        ret[variable_name] = {
+            "type": "nonreentrant lock",
+            "slot": reentrant_slot,
+        }
     # Iterate through variables
     for node in vyper_module.get_children(vy_ast.AnnAssign):
 

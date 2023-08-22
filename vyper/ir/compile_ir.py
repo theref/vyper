@@ -103,7 +103,6 @@ def _rewrite_return_sequences(ir_node, label_params=None):
             ir_node.args[0].value = "pass"
             ir_node.args[1].value = "pass"
     if ir_node.value == "exit_to":
-        # handle exit from private function
         if args[0].value == "return_pc":
             ir_node.value = "jump"
             args[0].value = "pass"
@@ -122,7 +121,7 @@ def _rewrite_return_sequences(ir_node, label_params=None):
             ir_node.args = IRnode.from_list(_t, source_pos=ir_node.source_pos).args
 
     if ir_node.value == "label":
-        label_params = set(t.value for t in ir_node.args[1].args)
+        label_params = {t.value for t in ir_node.args[1].args}
 
     for t in args:
         _rewrite_return_sequences(t, label_params)
@@ -144,7 +143,7 @@ def _add_postambles(asm_ops):
         # shared failure block
         to_append.extend(_revert0_string)
 
-    if len(to_append) > 0:
+    if to_append:
         # for some reason there might not be a STOP at the end of asm_ops.
         # (generally vyper programs will have it but raw IR might not).
         asm_ops.append("STOP")
@@ -213,10 +212,9 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         if isinstance(ofst.value, int):
             # resolve at compile time using magic _OFST op
             return ["_OFST", sym, ofst.value]
-        else:
-            # if we can't resolve at compile time, resolve at runtime
-            ofst = _compile_to_assembly(ofst, withargs, existing_labels, break_dest, height_)
-            return ofst + [sym, "ADD"]
+        # if we can't resolve at compile time, resolve at runtime
+        ofst = _compile_to_assembly(ofst, withargs, existing_labels, break_dest, height_)
+        return ofst + [sym, "ADD"]
 
     def _height_of(witharg):
         ret = height - withargs[witharg]
@@ -237,7 +235,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         o.append(code.value.upper())
         return o
 
-    # Numbers
     elif isinstance(code.value, int):
         if code.value < -(2 ** 255):
             raise Exception(f"Value too low: {code.value}")
@@ -245,27 +242,21 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             raise Exception(f"Value too high: {code.value}")
         return PUSH(code.value % 2 ** 256)
 
-    # Variables connected to with statements
     elif isinstance(code.value, str) and code.value in withargs:
-        return ["DUP" + str(_height_of(code.value))]
+        return [f"DUP{str(_height_of(code.value))}"]
 
-    # Setting variables connected to with statements
     elif code.value == "set":
         if len(code.args) != 2 or code.args[0].value not in withargs:
             raise Exception("Set expects two arguments, the first being a stack variable")
         if height - withargs[code.args[0].value] > 16:
             raise Exception("With statement too deep")
-        return _compile_to_assembly(code.args[1], withargs, existing_labels, break_dest, height) + [
-            "SWAP" + str(height - withargs[code.args[0].value]),
-            "POP",
-        ]
+        return _compile_to_assembly(
+            code.args[1], withargs, existing_labels, break_dest, height
+        ) + [f"SWAP{str(height - withargs[code.args[0].value])}", "POP"]
 
-    # Pass statements
-    # TODO remove "dummy"; no longer needed
     elif code.value in ("pass", "dummy"):
         return []
 
-    # "mload" from data section of the currently executing code
     elif code.value == "dload":
         loc = code.args[0]
 
@@ -277,7 +268,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         o.extend(PUSH(MemoryPositions.FREE_VAR_SPACE) + ["MLOAD"])
         return o
 
-    # batch copy from data section of the currently executing code to memory
     elif code.value == "dloadbytes":
         dst = code.args[0]
         src = code.args[1]
@@ -290,7 +280,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         o.extend(["CODECOPY"])
         return o
 
-    # "mload" from the data section of (to-be-deployed) runtime code
     elif code.value == "iload":
         loc = code.args[0]
 
@@ -300,7 +289,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
 
         return o
 
-    # "mstore" to the data section of (to-be-deployed) runtime code
     elif code.value == "istore":
         loc = code.args[0]
         val = code.args[1]
@@ -312,11 +300,9 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
 
         return o
 
-    # batch copy from memory to the data section of runtime code
     elif code.value == "istorebytes":
         raise Exception("unimplemented")
 
-    # If statements (2 arguments, ie. if x: y)
     elif code.value == "if" and len(code.args) == 2:
         o = []
         o.extend(_compile_to_assembly(code.args[0], withargs, existing_labels, break_dest, height))
@@ -325,7 +311,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         o.extend(_compile_to_assembly(code.args[1], withargs, existing_labels, break_dest, height))
         o.extend([end_symbol, "JUMPDEST"])
         return o
-    # If statements (3 arguments, ie. if x: y, else: z)
     elif code.value == "if" and len(code.args) == 3:
         o = []
         o.extend(_compile_to_assembly(code.args[0], withargs, existing_labels, break_dest, height))
@@ -338,15 +323,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         o.extend([end_symbol, "JUMPDEST"])
         return o
 
-    # repeat(counter_location, start, rounds, rounds_bound, body)
-    # basically a do-while loop:
-    #
-    # assert(rounds <= rounds_bound)
-    # if (rounds > 0) {
-    #   do {
-    #     body;
-    #   } while (++i != start + rounds)
-    # }
     elif code.value == "repeat":
         o = []
         if len(code.args) != 5:
@@ -437,13 +413,11 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
 
         return o
 
-    # Continue to the next iteration of the for loop
     elif code.value == "continue":
         if not break_dest:
             raise CompilerPanic("Invalid break")
         dest, continue_dest, break_height = break_dest
         return [continue_dest, "JUMP"]
-    # Break from inside a for loop
     elif code.value == "break":
         if not break_dest:
             raise CompilerPanic("Invalid break")
@@ -453,7 +427,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         # clean up any stack items declared in the loop body
         cleanup_local_vars = ["POP"] * n_local_vars
         return cleanup_local_vars + [dest, "JUMP"]
-    # Break from inside one or more for loops prior to a return statement inside the loop
     elif code.value == "cleanup_repeat":
         if not break_dest:
             raise CompilerPanic("Invalid break")
@@ -465,7 +438,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         if "return_pc" in withargs:
             break_height -= 1
         return ["POP"] * break_height
-    # With statements
     elif code.value == "with":
         o = []
         o.extend(_compile_to_assembly(code.args[1], withargs, existing_labels, break_dest, height))
@@ -490,7 +462,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             del withargs[code.args[0].value]
         return o
 
-    # runtime statement (used to deploy runtime code)
     elif code.value == "deploy":
         memsize = code.args[0].value  # used later to calculate _mem_deploy_start
         ir = code.args[1]
@@ -529,7 +500,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
 
         return o
 
-    # Seq (used to piece together multiple statements)
     elif code.value == "seq":
         o = []
         for arg in code.args:
@@ -537,21 +507,17 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             if arg.valency == 1 and arg != code.args[-1]:
                 o.append("POP")
         return o
-    # Seq without popping.
-    # Assure (if false, invalid opcode)
     elif code.value == "assert_unreachable":
         o = _compile_to_assembly(code.args[0], withargs, existing_labels, break_dest, height)
         end_symbol = mksymbol("reachable")
         o.extend([end_symbol, "JUMPI", "INVALID", end_symbol, "JUMPDEST"])
         return o
-    # Assert (if false, exit)
     elif code.value == "assert":
         o = _compile_to_assembly(code.args[0], withargs, existing_labels, break_dest, height)
         o.extend(["ISZERO"])
         o.extend(_assert_false())
         return o
 
-    # SHA3 a single value
     elif code.value == "sha3_32":
         o = _compile_to_assembly(code.args[0], withargs, existing_labels, break_dest, height)
         o.extend(
@@ -567,7 +533,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             ]
         )
         return o
-    # SHA3 a 64 byte value
     elif code.value == "sha3_64":
         o = _compile_to_assembly(code.args[0], withargs, existing_labels, break_dest, height)
         o.extend(_compile_to_assembly(code.args[1], withargs, existing_labels, break_dest, height))
@@ -607,7 +572,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         # stack: b ^ (t * cond)
         return o
 
-    # <= operator
     elif code.value == "le":
         return _compile_to_assembly(
             IRnode.from_list(["iszero", ["gt", code.args[0], code.args[1]]]),
@@ -616,7 +580,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             break_dest,
             height,
         )
-    # >= operator
     elif code.value == "ge":
         return _compile_to_assembly(
             IRnode.from_list(["iszero", ["lt", code.args[0], code.args[1]]]),
@@ -625,7 +588,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             break_dest,
             height,
         )
-    # <= operator
     elif code.value == "sle":
         return _compile_to_assembly(
             IRnode.from_list(["iszero", ["sgt", code.args[0], code.args[1]]]),
@@ -634,7 +596,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             break_dest,
             height,
         )
-    # >= operator
     elif code.value == "sge":
         return _compile_to_assembly(
             IRnode.from_list(["iszero", ["slt", code.args[0], code.args[1]]]),
@@ -643,7 +604,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             break_dest,
             height,
         )
-    # != operator
     elif code.value == "ne":
         return _compile_to_assembly(
             IRnode.from_list(["iszero", ["eq", code.args[0], code.args[1]]]),
@@ -653,7 +613,6 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             height,
         )
 
-    # e.g. 95 -> 96, 96 -> 96, 97 -> 128
     elif code.value == "ceil32":
         # floor32(x) = x - x % 32 == x & 0b11..100000 == x & (~31)
         # ceil32(x) = floor32(x + 31) == (x + 31) & (~31)
@@ -666,17 +625,14 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
             height,
         )
 
-    # jump to a symbol, and push variable # of arguments onto stack
     elif code.value == "goto":
         o = []
         for i, c in enumerate(reversed(code.args[1:])):
             o.extend(_compile_to_assembly(c, withargs, existing_labels, break_dest, height + i))
-        o.extend(["_sym_" + str(code.args[0]), "JUMP"])
+        o.extend([f"_sym_{str(code.args[0])}", "JUMP"])
         return o
-    # push a literal symbol
     elif isinstance(code.value, str) and is_symbol(code.value):
         return [code.value]
-    # set a symbol as a location.
     elif code.value == "label":
         label_name = code.args[0].value
         assert isinstance(label_name, str)
@@ -711,19 +667,17 @@ def _compile_to_assembly(code, withargs=None, existing_labels=None, break_dest=N
         # label params to be consumed implicitly
         pop_scoped_vars = []
 
-        return ["_sym_" + label_name, "JUMPDEST"] + body_asm + pop_scoped_vars
+        return [f"_sym_{label_name}", "JUMPDEST"] + body_asm + pop_scoped_vars
 
     elif code.value == "exit_to":
         raise CodegenPanic("exit_to not implemented yet!")
 
-    # inject debug opcode.
     elif code.value == "debugger":
         return mkdebug(pc_debugger=False, source_pos=code.source_pos)
-    # inject debug opcode.
     elif code.value == "pc_debugger":
         return mkdebug(pc_debugger=True, source_pos=code.source_pos)
     else:
-        raise Exception("Weird code element: " + repr(code))
+        raise Exception(f"Weird code element: {repr(code)}")
 
 
 def note_line_num(line_number_map, item, pos):
@@ -734,8 +688,7 @@ def note_line_num(line_number_map, item, pos):
         else:
             offsets = None
         line_number_map["pc_pos_map"][pos] = offsets
-    added_line_breakpoint = note_breakpoint(line_number_map, item, pos)
-    return added_line_breakpoint
+    return note_breakpoint(line_number_map, item, pos)
 
 
 def note_breakpoint(line_number_map, item, pos):
@@ -750,16 +703,13 @@ def note_breakpoint(line_number_map, item, pos):
 
 
 def _prune_unreachable_code(assembly):
-    # In converting IR to assembly we sometimes end up with unreachable
-    # instructions - POPing to clear the stack or STOPing execution at the
-    # end of a function that has already returned or reverted. This should
-    # be addressed in the IR, but for now we do a final sanity check here
-    # to avoid unnecessary bytecode bloat.
-    changed = False
     i = 0
+    changed = False
     while i < len(assembly) - 1:
-        if assembly[i] in ("JUMP", "RETURN", "REVERT", "STOP") and not (
-            is_symbol(assembly[i + 1]) or assembly[i + 1] == "JUMPDEST"
+        if (
+            assembly[i] in ("JUMP", "RETURN", "REVERT", "STOP")
+            and not is_symbol(assembly[i + 1])
+            and assembly[i + 1] != "JUMPDEST"
         ):
             changed = True
             del assembly[i + 1]
@@ -800,25 +750,16 @@ def _merge_jumpdests(assembly):
     while i < len(assembly) - 3:
         if is_symbol(assembly[i]) and assembly[i + 1] == "JUMPDEST":
             current_symbol = assembly[i]
-            if is_symbol(assembly[i + 2]) and assembly[i + 3] == "JUMPDEST":
-                # _sym_x JUMPDEST _sym_y JUMPDEST
-                # replace all instances of _sym_x with _sym_y
-                # (except for _sym_x JUMPDEST - don't want duplicate labels)
-                new_symbol = assembly[i + 2]
-                for j in range(len(assembly)):
-                    if assembly[j] == current_symbol and i != j:
-                        assembly[j] = new_symbol
-                        changed = True
-            elif is_symbol(assembly[i + 2]) and assembly[i + 3] == "JUMP":
-                # _sym_x JUMPDEST _sym_y JUMP
-                # replace all instances of _sym_x with _sym_y
-                # (except for _sym_x JUMPDEST - don't want duplicate labels)
-                new_symbol = assembly[i + 2]
-                for j in range(len(assembly)):
-                    if assembly[j] == current_symbol and i != j:
-                        assembly[j] = new_symbol
-                        changed = True
-
+            if is_symbol(assembly[i + 2]):
+                if assembly[i + 3] in ["JUMPDEST", "JUMP"]:
+                    # _sym_x JUMPDEST _sym_y JUMPDEST
+                    # replace all instances of _sym_x with _sym_y
+                    # (except for _sym_x JUMPDEST - don't want duplicate labels)
+                    new_symbol = assembly[i + 2]
+                    for j in range(len(assembly)):
+                        if assembly[j] == current_symbol and i != j:
+                            assembly[j] = new_symbol
+                            changed = True
         i += 1
 
     return changed
@@ -946,12 +887,7 @@ def assembly_to_evm(assembly, start_pos=0, insert_vyper_signature=False):
         if item == "JUMP":
             last = assembly[i - 1]
             if is_symbol(last) and last.startswith("_sym_internal"):
-                if last.endswith("cleanup"):
-                    # exit an internal function
-                    line_number_map["pc_jump_map"][pos] = "o"
-                else:
-                    # enter an internal function
-                    line_number_map["pc_jump_map"][pos] = "i"
+                line_number_map["pc_jump_map"][pos] = "o" if last.endswith("cleanup") else "i"
             else:
                 # everything else
                 line_number_map["pc_jump_map"][pos] = "-"
@@ -959,7 +895,7 @@ def assembly_to_evm(assembly, start_pos=0, insert_vyper_signature=False):
             line_number_map["pc_jump_map"][pos] = "-"
 
         if is_symbol(item):
-            if assembly[i + 1] == "JUMPDEST" or assembly[i + 1] == "BLANK":
+            if assembly[i + 1] in ["JUMPDEST", "BLANK"]:
                 # Don't increment position as the symbol itself doesn't go into code
                 if item in posmap:
                     raise CompilerPanic(f"duplicate jumpdest {item}")
@@ -995,8 +931,8 @@ def assembly_to_evm(assembly, start_pos=0, insert_vyper_signature=False):
             )
             assert runtime_code_end - runtime_code_start == len(runtime_code)
             pos += len(runtime_code)
-            for key in line_number_map:
-                line_number_map[key].update(sub_map[key])
+            for key, value in line_number_map.items():
+                value.update(sub_map[key])
         else:
             pos += 1
 
@@ -1024,7 +960,7 @@ def assembly_to_evm(assembly, start_pos=0, insert_vyper_signature=False):
             continue
 
         elif is_symbol(item):
-            if assembly[i + 1] != "JUMPDEST" and assembly[i + 1] != "BLANK":
+            if assembly[i + 1] not in ["JUMPDEST", "BLANK"]:
                 bytecode, _ = assembly_to_evm(PUSH_N(posmap[item], n=2))
                 o += bytecode
 
@@ -1054,7 +990,7 @@ def assembly_to_evm(assembly, start_pos=0, insert_vyper_signature=False):
             o += runtime_code
         else:
             # Should never reach because, assembly is create in _compile_to_assembly.
-            raise Exception("Weird symbol in assembly: " + str(item))  # pragma: no cover
+            raise Exception(f"Weird symbol in assembly: {str(item)}")
 
     o += bytecode_suffix
 

@@ -113,10 +113,7 @@ def calculate_largest_power(a: int, num_bits: int, is_signed: bool) -> int:
     # Edge case: If a is negative and the values of a and b are such that:
     #               (a) ** (b + 1) == -(2 ** value_bits)
     #            we can actually squeak one more out of it because it's on the edge
-    if a_is_negative and (-a) ** (b + 1) == -(2 ** value_bits):  # NOTE: a = abs(a)
-        return b + 1
-    else:
-        return b  # Exact
+    return b + 1 if a_is_negative and (-a) ** (b + 1) == -(2 ** value_bits) else b
 
 
 def calculate_largest_base(b: int, num_bits: int, is_signed: bool) -> int:
@@ -255,16 +252,15 @@ class Expr:
 
     def _make_bytelike(self, btype, bytez, bytez_length):
         placeholder = self.context.new_internal_variable(btype)
-        seq = []
-        seq.append(["mstore", placeholder, bytez_length])
-        for i in range(0, len(bytez), 32):
-            seq.append(
-                [
-                    "mstore",
-                    ["add", placeholder, i + 32],
-                    bytes_to_int((bytez + b"\x00" * 31)[i : i + 32]),
-                ]
-            )
+        seq = [["mstore", placeholder, bytez_length]]
+        seq.extend(
+            [
+                "mstore",
+                ["add", placeholder, i + 32],
+                bytes_to_int((bytez + b"\x00" * 31)[i : i + 32]),
+            ]
+            for i in range(0, len(bytez), 32)
+        )
         return IRnode.from_list(
             ["seq"] + seq + [placeholder],
             typ=btype,
@@ -329,8 +325,7 @@ class Expr:
                 else:
                     seq = ["balance", addr]
                 return IRnode.from_list(seq, typ=BaseType("uint256"))
-        # x.codesize: codesize of address x
-        elif self.expr.attr == "codesize" or self.expr.attr == "is_contract":
+        elif self.expr.attr in ["codesize", "is_contract"]:
             addr = Expr.parse_value_expr(self.expr.value, self.context)
             if is_base_type(addr.typ, "address"):
                 if self.expr.attr == "codesize":
@@ -343,7 +338,6 @@ class Expr:
                     eval_code = ["gt", ["extcodesize", addr], 0]
                     output_type = "bool"
                 return IRnode.from_list(eval_code, typ=BaseType(output_type))
-        # x.codehash: keccak of address x
         elif self.expr.attr == "codehash":
             addr = Expr.parse_value_expr(self.expr.value, self.context)
             if not version_check(begin="constantinople"):
@@ -352,7 +346,6 @@ class Expr:
                 )
             if is_base_type(addr.typ, "address"):
                 return IRnode.from_list(["extcodehash", addr], typ=BaseType("bytes32"))
-        # x.code: codecopy/extcodecopy of address x
         elif self.expr.attr == "code":
             addr = Expr.parse_value_expr(self.expr.value, self.context)
             if is_base_type(addr.typ, "address"):
@@ -360,7 +353,6 @@ class Expr:
                 if addr.value == "address":  # for `self.code`
                     return IRnode.from_list(["~selfcode"], typ=ByteArrayType(0))
                 return IRnode.from_list(["~extcode", addr], typ=ByteArrayType(0))
-        # self.x: global attribute
         elif isinstance(self.expr.value, vy_ast.Name) and self.expr.value.id == "self":
             type_ = self.expr._metadata["type"]
             var = self.context.globals[self.expr.attr]
@@ -368,9 +360,8 @@ class Expr:
                 type_.position.position,
                 typ=var.typ,
                 location=STORAGE,
-                annotation="self." + self.expr.attr,
+                annotation=f"self.{self.expr.attr}",
             )
-        # Reserved keywords
         elif (
             isinstance(self.expr.value, vy_ast.Name) and self.expr.value.id in ENVIRONMENT_VARIABLES
         ):
@@ -408,7 +399,6 @@ class Expr:
                         "chain.id is unavailable prior to istanbul ruleset", self.expr
                     )
                 return IRnode.from_list(["chainid"], typ="uint256")
-        # Other variables
         else:
             sub = Expr(self.expr.value, self.context).ir_node
             # contract type
@@ -585,12 +575,7 @@ class Expr:
 
             new_typ = BaseType(ltyp)
 
-            if right.typ.is_literal:
-                divisor = "r"
-            else:
-                # only apply the non-zero clamp when r is not a constant
-                divisor = clamp("gt", "r", 0)
-
+            divisor = "r" if right.typ.is_literal else clamp("gt", "r", 0)
             if ltyp in ("uint8", "uint256"):
                 arith = ["div", "l", divisor]
 
@@ -628,12 +613,7 @@ class Expr:
 
             new_typ = BaseType(ltyp)
 
-            if right.typ.is_literal:
-                divisor = "r"
-            else:
-                # only apply the non-zero clamp when r is not a constant
-                divisor = clamp("gt", "r", 0)
-
+            divisor = "r" if right.typ.is_literal else clamp("gt", "r", 0)
             if ltyp in ("uint8", "uint256"):
                 arith = ["mod", "l", divisor]
             else:
@@ -781,10 +761,7 @@ class Expr:
             "sle": "le",
             "slt": "lt",
         }
-        if op in translation_map:
-            return translation_map[op]
-        else:
-            return op
+        return translation_map.get(op, op)
 
     def parse_Compare(self):
         left = Expr.parse_value_expr(self.expr.left, self.context)
@@ -969,8 +946,7 @@ class Expr:
     def parse_Tuple(self):
         tuple_elements = [Expr(x, self.context).ir_node for x in self.expr.elements]
         typ = TupleType([x.typ for x in tuple_elements], is_literal=True)
-        multi_ir = IRnode.from_list(["multi"] + tuple_elements, typ=typ)
-        return multi_ir
+        return IRnode.from_list(["multi"] + tuple_elements, typ=typ)
 
     @staticmethod
     def struct_literals(expr, name, context):
@@ -985,7 +961,7 @@ class Expr:
             member_subs[key.id] = sub
             member_typs[key.id] = sub.typ
         return IRnode.from_list(
-            ["multi"] + [member_subs[key] for key in member_subs.keys()],
+            ["multi"] + [member_subs[key] for key in member_subs],
             typ=StructType(member_typs, name, is_literal=True),
         )
 

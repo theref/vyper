@@ -190,7 +190,7 @@ class BasePrimitive:
         return isinstance(other, cls._type)
 
     @classmethod
-    def fetch_call_return(self, node: vy_ast.Call) -> "BaseTypeDefinition":
+    def fetch_call_return(cls, node: vy_ast.Call) -> "BaseTypeDefinition":
         """
         Validate a call to this type and return the result.
 
@@ -210,7 +210,7 @@ class BasePrimitive:
         raise StructureException("Type is not callable", node)
 
     @classmethod
-    def get_subscripted_type(self, node: vy_ast.Index) -> None:
+    def get_subscripted_type(cls, node: vy_ast.Index) -> None:
         # always raises - do not implement in inherited classes
         raise StructureException("Types cannot be indexed", node)
 
@@ -518,10 +518,7 @@ class BaseTypeDefinition:
         for a, b in zip(arguments, other_arguments):
             if not a.compare_type(b):
                 return False
-        if return_type and not return_type.compare_type(other_return_type):  # type: ignore
-            return False
-
-        return True
+        return bool(not return_type or return_type.compare_type(other_return_type))
 
 
 # TODO rename this: it's really for address/interface signature resolution

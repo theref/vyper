@@ -424,7 +424,7 @@ class ContractFunction(BaseTypeDefinition):
 
         method_ids = {}
         for i in range(self.min_arg_count, self.max_arg_count + 1):
-            method_ids.update(_generate_method_id(self.name, arg_types[:i]))
+            method_ids |= _generate_method_id(self.name, arg_types[:i])
         return method_ids
 
     # for caller-fills-args calling convention
@@ -529,15 +529,14 @@ class ContractFunction(BaseTypeDefinition):
         else:
             abi_dict["outputs"] = [generate_abi_type(typ)]
 
-        if self.has_default_args:
-            # for functions with default args, return a dict for each possible arg count
-            result = []
-            for i in range(self.min_arg_count, self.max_arg_count + 1):
-                result.append(abi_dict.copy())
-                result[-1]["inputs"] = result[-1]["inputs"][:i]
-            return result
-        else:
+        if not self.has_default_args:
             return [abi_dict]
+        # for functions with default args, return a dict for each possible arg count
+        result = []
+        for i in range(self.min_arg_count, self.max_arg_count + 1):
+            result.append(abi_dict.copy())
+            result[-1]["inputs"] = result[-1]["inputs"][:i]
+        return result
 
 
 class MemberFunctionDefinition(BaseTypeDefinition):

@@ -27,7 +27,7 @@ def test() -> address:
     nonce = 1
     rlp_encoded = rlp.encode([address_bits, nonce])
     expected_create_address = keccak256(rlp_encoded)[12:].rjust(20, b"\x00")
-    assert c.test() == checksum_encode("0x" + expected_create_address.hex())
+    assert c.test() == checksum_encode(f"0x{expected_create_address.hex()}")
 
 
 def test_create_forwarder_to_call(get_contract, w3):

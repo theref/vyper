@@ -239,7 +239,7 @@ def test() -> bool:
 
 @pytest.mark.parametrize("m,val", [(2, b"ab"), (3, b"ab"), (3, b"abc")])
 def test_bytes_literals(get_contract, m, val):
-    vyper_literal = "0x" + val.ljust(m, b"\x00").hex()
+    vyper_literal = f'0x{val.ljust(m, b"\x00").hex()}'
     code = f"""
 @external
 def test() -> bool:
