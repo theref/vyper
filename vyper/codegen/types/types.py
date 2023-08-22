@@ -134,14 +134,13 @@ def is_integer_type(t: "NodeType") -> bool:
 
 # TODO maybe move this to vyper.utils
 def parse_integer_typeinfo(typename: str) -> IntegerTypeInfo:
-    t = _int_parser.fullmatch(typename)
-    if not t:
+    if t := _int_parser.fullmatch(typename):
+        return IntegerTypeInfo(
+            is_signed=t.group(1) != "u",
+            bits=int(t.group(2)),
+        )
+    else:
         raise InvalidType(f"Invalid integer type {typename}")  # pragma: notest
-
-    return IntegerTypeInfo(
-        is_signed=t.group(1) != "u",
-        bits=int(t.group(2)),
-    )
 
 
 def is_bytes_m_type(t: "NodeType") -> bool:
@@ -317,7 +316,7 @@ class MappingType(NodeType):
         return other.keytype == self.keytype and other.valuetype == self.valuetype
 
     def __repr__(self):
-        return "HashMap[" + repr(self.valuetype) + ", " + repr(self.keytype) + "]"
+        return f"HashMap[{repr(self.valuetype)}, {repr(self.keytype)}]"
 
     @property
     def memory_bytes_required(self):
@@ -341,7 +340,7 @@ class TupleLike(NodeType):
 
     @property
     def memory_bytes_required(self):
-        return sum([t.memory_bytes_required for t in self.tuple_members()])
+        return sum(t.memory_bytes_required for t in self.tuple_members())
 
     @property
     def abi_type(self):
@@ -361,11 +360,13 @@ class StructType(TupleLike):
 
     def __repr__(self):
         if self.name:
-            return "struct " + self.name
+            return f"struct {self.name}"
         else:
             # Anonymous struct
             return (
-                "struct {" + ", ".join([k + ": " + repr(v) for k, v in self.members.items()]) + "}"
+                "struct {"
+                + ", ".join([f"{k}: {repr(v)}" for k, v in self.members.items()])
+                + "}"
             )
 
     def tuple_items(self):

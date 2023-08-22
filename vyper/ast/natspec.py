@@ -35,9 +35,8 @@ def parse_natspec(vyper_module_folded: vy_ast.Module) -> Tuple[dict, dict]:
     userdoc, devdoc = {}, {}
     source: str = vyper_module_folded.full_source_code
 
-    docstring = vyper_module_folded.get("doc_string.value")
-    if docstring:
-        devdoc.update(_parse_docstring(source, docstring, ("param", "return")))
+    if docstring := vyper_module_folded.get("doc_string.value"):
+        devdoc |= _parse_docstring(source, docstring, ("param", "return"))
         if "notice" in devdoc:
             userdoc["notice"] = devdoc.pop("notice")
 

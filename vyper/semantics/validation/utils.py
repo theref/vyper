@@ -112,8 +112,10 @@ class _ExprTypeChecker:
         fn = self._find_fn(node)
         types_list = fn(node)
         if only_definitions:
-            invalid = next((i for i in types_list if not isinstance(i, BaseTypeDefinition)), None)
-            if invalid:
+            if invalid := next(
+                (i for i in types_list if not isinstance(i, BaseTypeDefinition)),
+                None,
+            ):
                 if isinstance(invalid, type) and types.BasePrimitive in invalid.mro():
                     raise InvalidReference(
                         f"'{invalid._id}' is a type - expected a literal or variable", node
@@ -206,8 +208,7 @@ class _ExprTypeChecker:
     def types_from_Call(self, node):
         # function calls, e.g. `foo()`
         var = self.get_exact_type_from_node(node.func, False)
-        return_value = var.fetch_call_return(node)
-        if return_value:
+        if return_value := var.fetch_call_return(node):
             return [return_value]
         raise InvalidType(f"{var} did not return a value", node)
 
@@ -237,10 +238,7 @@ class _ExprTypeChecker:
             # empty list literal `[]`
             # subtype can be anything
             types_list = types.get_types()
-            # 1 is minimum possible length for dynarray, assignable to anything
-            ret = [DynamicArrayDefinition(t, 1) for t in types_list]
-            return ret
-
+            return [DynamicArrayDefinition(t, 1) for t in types_list]
         types_list = get_common_types(*node.elements)
 
         # Throw exception if only possible type is String or Bytes
@@ -250,8 +248,7 @@ class _ExprTypeChecker:
 
         if len(types_list) > 0:
             count = len(node.elements)
-            ret = []
-            ret.extend([ArrayDefinition(t, count) for t in types_list])
+            ret = [ArrayDefinition(t, count) for t in types_list]
             ret.extend([DynamicArrayDefinition(t, count) for t in types_list])
             return ret
 
@@ -508,7 +505,8 @@ def validate_unique_method_ids(functions: List) -> None:
         A list of ContractFunction objects.
     """
     method_ids = [x for i in functions for x in i.method_ids.values()]
-    collision = next((i for i in method_ids if method_ids.count(i) > 1), None)
-    if collision:
+    if collision := next(
+        (i for i in method_ids if method_ids.count(i) > 1), None
+    ):
         collision_str = ", ".join(i.name for i in functions if collision in i.method_ids)
         raise StructureException(f"Methods have conflicting IDs: {collision_str}")

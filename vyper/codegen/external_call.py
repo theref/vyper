@@ -31,7 +31,7 @@ class _CallKwargs:
 def _pack_arguments(fn_type, args, context):
     # abi encoding just treats all args as a big tuple
     args_tuple_t = TupleType([x.typ for x in args])
-    args_as_tuple = IRnode.from_list(["multi"] + [x for x in args], typ=args_tuple_t)
+    args_as_tuple = IRnode.from_list(["multi"] + list(args), typ=args_tuple_t)
     args_abi_t = args_tuple_t.abi_type
 
     # sanity typecheck - make sure the arguments can be assigned
@@ -66,9 +66,7 @@ def _pack_arguments(fn_type, args, context):
     # if we were only targeting constantinople, we could align
     # to buf (and also keep code size small) by using
     # (mstore buf (shl signature.method_id 224))
-    pack_args = ["seq"]
-    pack_args.append(["mstore", buf, util.abi_method_id(abi_signature)])
-
+    pack_args = ["seq", ["mstore", buf, util.abi_method_id(abi_signature)]]
     if len(args) != 0:
         pack_args.append(abi_encode(buf + 32, args_as_tuple, context, bufsz=buflen))
 
@@ -158,7 +156,7 @@ def _parse_kwargs(call_expr, context):
         default_return_value=call_kwargs.pop("default_return_value", None),
     )
 
-    if len(call_kwargs) != 0:
+    if call_kwargs:
         raise TypeCheckFailure(f"Unexpected keyword arguments: {call_kwargs}")
 
     return ret

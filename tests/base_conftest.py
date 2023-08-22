@@ -32,7 +32,7 @@ class VyperMethod:
                 if x.get("name") == self._function.function_identifier
             ].pop()
             # To make tests faster just supply some high gas value.
-            modifier_dict.update({"gas": fn_abi.get("gas", 0) + 50000})
+            modifier_dict["gas"] = fn_abi.get("gas", 0) + 50000
         elif len(kwargs) == 1:
             modifier, modifier_dict = kwargs.popitem()
             if modifier not in self.ALLOWED_MODIFIERS:
@@ -123,8 +123,7 @@ def _get_contract(w3, source_code, no_optimize, *args, **kwargs):
         "from": w3.eth.accounts[0],
         "value": value,
         "gasPrice": 0,
-    }
-    tx_info.update(kwargs)
+    } | kwargs
     tx_hash = deploy_transaction.transact(tx_info)
     address = w3.eth.get_transaction_receipt(tx_hash)["contractAddress"]
     return w3.eth.contract(

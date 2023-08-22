@@ -71,16 +71,13 @@ class Stmt:
 
         sub = Expr(self.stmt.value, self.context).ir_node
 
-        is_literal_bytes32_assign = (
+        if is_literal_bytes32_assign := (
             isinstance(sub.typ, ByteArrayType)
             and sub.typ.maxlen == 32
             and isinstance(typ, BaseType)
             and typ.typ == "bytes32"
             and sub.typ.is_literal
-        )
-
-        # If bytes[32] to bytes32 assignment rewrite sub as bytes32.
-        if is_literal_bytes32_assign:
+        ):
             sub = IRnode(
                 util.bytes_to_int(self.stmt.value.s),
                 typ=BaseType("bytes32"),
@@ -157,7 +154,7 @@ class Stmt:
 
                 return append_dyn_array(darray, arg)
             else:
-                assert len(args) == 0
+                assert not args
                 return pop_dyn_array(darray, return_popped_item=False)
 
         elif is_self_function:
@@ -180,9 +177,7 @@ class Stmt:
         # TODO this is probably useful in codegen.core
         # compare with eval_seq.
         def _get_last(ir):
-            if len(ir.args) == 0:
-                return ir.value
-            return _get_last(ir.args[-1])
+            return ir.value if len(ir.args) == 0 else _get_last(ir.args[-1])
 
         # TODO maybe use ensure_in_memory
         if msg_ir.location != MEMORY:
@@ -301,11 +296,11 @@ class Stmt:
 
         self.context.forvars[varname] = True
 
-        loop_body = ["seq"]
-        # store the current value of i so it is accessible to userland
-        loop_body.append(["mstore", iptr, i])
-        loop_body.append(parse_body(self.stmt.body, self.context))
-
+        loop_body = [
+            "seq",
+            ["mstore", iptr, i],
+            parse_body(self.stmt.body, self.context),
+        ]
         ir_node = IRnode.from_list(["repeat", i, start, rounds, rounds, loop_body])
         del self.context.forvars[varname]
 

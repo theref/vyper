@@ -233,15 +233,13 @@ def _gas(value: OpcodeValue, idx: int) -> Optional[OpcodeRulesetValue]:
         return value[:3] + (gas,)
     if len(gas) <= idx:
         return value[:3] + (gas[-1],)
-    if gas[idx] is None:
-        return None
-    return value[:3] + (gas[idx],)
+    return None if gas[idx] is None else value[:3] + (gas[idx],)
 
 
 def _mk_version_opcodes(opcodes: OpcodeMap, idx: int) -> OpcodeRulesetMap:
-    return dict(
-        (k, _gas(v, idx)) for k, v in opcodes.items() if _gas(v, idx) is not None  # type: ignore
-    )
+    return {
+        k: _gas(v, idx) for k, v in opcodes.items() if _gas(v, idx) is not None
+    }
 
 
 _evm_opcodes: Dict[int, OpcodeRulesetMap] = {

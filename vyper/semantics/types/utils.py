@@ -23,8 +23,8 @@ class StringEnum(enum.Enum):
         return enum.auto()
 
     # Must be first, or else won't work, specifies what .value is
-    def _generate_next_value_(name, start, count, last_values):
-        return name.lower()
+    def _generate_next_value_(self, start, count, last_values):
+        return self.lower()
 
     # Override ValueError with our own internal exception
     @classmethod
@@ -33,7 +33,7 @@ class StringEnum(enum.Enum):
 
     @classmethod
     def is_valid_value(cls, value: str) -> bool:
-        return value in set(o.value for o in cls)
+        return value in {o.value for o in cls}
 
     @classmethod
     def options(cls) -> List["StringEnum"]:

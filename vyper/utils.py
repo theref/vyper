@@ -49,9 +49,7 @@ def signed_to_unsigned(int_, bits, strict=False):
     if strict:
         lo, hi = int_bounds(signed=True, bits=bits)
         assert lo <= int_ <= hi
-    if int_ < 0:
-        return int_ + 2 ** bits
-    return int_
+    return int_ + 2 ** bits if int_ < 0 else int_
 
 
 def unsigned_to_signed(int_, bits, strict=False):
@@ -64,9 +62,7 @@ def unsigned_to_signed(int_, bits, strict=False):
     if strict:
         lo, hi = int_bounds(signed=False, bits=bits)
         assert lo <= int_ <= hi
-    if int_ > (2 ** (bits - 1)) - 1:
-        return int_ - (2 ** bits)
-    return int_
+    return int_ - (2 ** bits) if int_ > (2 ** (bits - 1)) - 1 else int_
 
 
 def is_power_of_two(n: int) -> bool:
@@ -152,7 +148,7 @@ def checksum_encode(addr):  # Expects an input of the form 0x<40 hex chars>
             o += c
         else:
             o += c.upper() if (v & (2 ** (255 - 4 * i))) else c.lower()
-    return "0x" + o
+    return f"0x{o}"
 
 
 # Returns lowest multiple of 32 >= the input
@@ -182,9 +178,11 @@ def int_bounds(signed, bits):
     ex. int_bounds(8, True) -> (-128, 127)
         int_bounds(8, False) -> (0, 255)
     """
-    if signed:
-        return -(2 ** (bits - 1)), (2 ** (bits - 1)) - 1
-    return 0, (2 ** bits) - 1
+    return (
+        (-(2 ** (bits - 1)), (2 ** (bits - 1)) - 1)
+        if signed
+        else (0, (2**bits) - 1)
+    )
 
 
 # e.g. -1 -> -(2**256 - 1)
@@ -354,11 +352,7 @@ def annotate_source_code(
     line_repr = source_lines[line_offset]
     if "\n" not in line_repr[-2:]:  # Handle certain edge cases
         line_repr += "\n"
-    if col_offset is None:
-        mark_repr = ""
-    else:
-        mark_repr = "-" * col_offset + "^" + "\n"
-
+    mark_repr = "" if col_offset is None else "-" * col_offset + "^" + "\n"
     before_lines = "".join(source_lines[start_offset:line_offset])
     after_lines = "".join(source_lines[line_offset + 1 : end_offset])
     location_repr = "".join((before_lines, line_repr, mark_repr, after_lines))
@@ -369,7 +363,7 @@ def annotate_source_code(
 
         # Highlight line identified by `lineno`
         local_line_off = line_offset - start_offset
-        lineno_reprs[local_line_off] = "---> " + lineno_reprs[local_line_off]
+        lineno_reprs[local_line_off] = f"---> {lineno_reprs[local_line_off]}"
 
         # Calculate width of widest line no
         max_len = max(len(i) for i in lineno_reprs)

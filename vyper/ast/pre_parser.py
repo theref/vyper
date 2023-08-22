@@ -107,8 +107,8 @@ def pre_parse(code: str) -> Tuple[ModificationOffsets, str]:
         code_bytes = code.encode("utf-8")
         token_list = list(tokenize(io.BytesIO(code_bytes).readline))
 
-        for i in range(len(token_list)):
-            token = token_list[i]
+        for token_ in token_list:
+            token = token_
             toks = [token]
 
             typ = token.type

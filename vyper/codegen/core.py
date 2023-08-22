@@ -61,10 +61,7 @@ def make_byte_array_copier(dst, src):
 
             max_bytes = src.typ.maxlen
 
-            ret = ["seq"]
-            # store length
-            ret.append(STORE(dst, len_))
-
+            ret = ["seq", STORE(dst, len_)]
             dst = bytes_data_ptr(dst)
             src = bytes_data_ptr(src)
 
@@ -94,17 +91,13 @@ def _dynarray_make_setter(dst, src):
         return IRnode.from_list(STORE(dst, 0))
 
     if src.value == "multi":
-        ret = ["seq"]
         # handle literals
 
         # write the length word
         store_length = STORE(dst, len(src.args))
-        ann = None
-        if src.annotation is not None:
-            ann = f"len({src.annotation})"
+        ann = f"len({src.annotation})" if src.annotation is not None else None
         store_length = IRnode.from_list(store_length, annotation=ann)
-        ret.append(store_length)
-
+        ret = ["seq", store_length]
         n_items = len(src.args)
         for i in range(n_items):
             k = IRnode.from_list(i, typ="uint256")
@@ -132,9 +125,7 @@ def _dynarray_make_setter(dst, src):
         should_loop |= needs_clamp(src.typ.subtype, src.encoding)
 
         with get_dyn_array_count(src).cache_when_complex("darray_count") as (b2, count):
-            ret = ["seq"]
-
-            ret.append(STORE(dst, count))
+            ret = ["seq", STORE(dst, count)]
 
             if should_loop:
                 i = IRnode.from_list(_freshname("copy_darray_ix"), typ="uint256")
@@ -176,9 +167,9 @@ def copy_bytes(dst, src, length, length_bound):
     dst = IRnode.from_list(dst)
     length = IRnode.from_list(length)
 
-    with src.cache_when_complex("src") as (b1, src), length.cache_when_complex(
-        "copy_bytes_count"
-    ) as (b2, length), dst.cache_when_complex("dst") as (b3, dst):
+    with (src.cache_when_complex("src") as (b1, src), length.cache_when_complex(
+            "copy_bytes_count"
+        ) as (b2, length), dst.cache_when_complex("dst") as (b3, dst)):
 
         assert length_bound >= 0
 
@@ -210,11 +201,6 @@ def copy_bytes(dst, src, length, length_bound):
 
             ret = IRnode.from_list(copy_op, annotation=annotation, add_gas_estimate=gas_bound)
             return b1.resolve(b2.resolve(b3.resolve(ret)))
-
-        if dst.location == IMMUTABLES and src.location in (MEMORY, DATA):
-            # TODO istorebytes-from-mem, istorebytes-from-calldata(?)
-            # compile to identity, CODECOPY respectively.
-            pass
 
         # general case, copy word-for-word
         # pseudocode for our approach (memory-storage as example):
@@ -269,12 +255,17 @@ def append_dyn_array(darray_node, elem_node):
     with darray_node.cache_when_complex("darray") as (b1, darray_node):
         len_ = get_dyn_array_count(darray_node)
         with len_.cache_when_complex("old_darray_len") as (b2, len_):
-            ret.append(["assert", ["lt", len_, darray_node.typ.count]])
-            ret.append(STORE(darray_node, ["add", len_, 1]))
-            # NOTE: typechecks elem_node
-            # NOTE skip array bounds check bc we already asserted len two lines up
-            ret.append(
-                make_setter(get_element_ptr(darray_node, len_, array_bounds_check=False), elem_node)
+            ret.extend(
+                (
+                    ["assert", ["lt", len_, darray_node.typ.count]],
+                    STORE(darray_node, ["add", len_, 1]),
+                    make_setter(
+                        get_element_ptr(
+                            darray_node, len_, array_bounds_check=False
+                        ),
+                        elem_node,
+                    ),
+                )
             )
             return IRnode.from_list(b1.resolve(b2.resolve(ret)))
 
@@ -356,15 +347,14 @@ def _get_element_ptr_tuplelike(parent, key):
     typ = parent.typ
     assert isinstance(typ, TupleLike)
 
+    subtype = typ.members[key]
     if isinstance(typ, StructType):
         assert isinstance(key, str)
-        subtype = typ.members[key]
         attrs = list(typ.tuple_keys())
         index = attrs.index(key)
         annotation = key
     else:
         assert isinstance(key, int)
-        subtype = typ.members[key]
         attrs = list(range(len(typ.members)))
         index = key
         annotation = None
@@ -531,17 +521,14 @@ def STORE(ptr: IRnode, val: IRnode) -> IRnode:
 def unwrap_location(orig):
     if orig.location is not None:
         return IRnode.from_list(LOAD(orig), typ=orig.typ)
-    else:
         # CMC 2022-03-24 TODO refactor so this branch can be removed
-        if orig.value == "~empty":
-            return IRnode.from_list(0, typ=orig.typ)
-        return orig
+    return IRnode.from_list(0, typ=orig.typ) if orig.value == "~empty" else orig
 
 
 # utility function, constructs an IR tuple out of a list of IR nodes
 def ir_tuple_from_args(args):
     typ = TupleType([x.typ for x in args])
-    return IRnode.from_list(["multi"] + [x for x in args], typ=typ)
+    return IRnode.from_list(["multi"] + list(args), typ=typ)
 
 
 def _needs_external_call_wrap(ir_typ):
@@ -565,9 +552,7 @@ def _needs_external_call_wrap(ir_typ):
 
 
 def calculate_type_for_external_return(ir_typ):
-    if _needs_external_call_wrap(ir_typ):
-        return TupleType([ir_typ])
-    return ir_typ
+    return TupleType([ir_typ]) if _needs_external_call_wrap(ir_typ) else ir_typ
 
 
 def wrap_value_for_external_return(ir_val):
@@ -813,21 +798,14 @@ def eval_seq(ir_node):
     """
     if ir_node.value in ("seq", "with") and len(ir_node.args) > 0:
         return eval_seq(ir_node.args[-1])
-    if isinstance(ir_node.value, int):
-        return IRnode.from_list(ir_node)
-    return None
+    return IRnode.from_list(ir_node) if isinstance(ir_node.value, int) else None
 
 
 # TODO move return checks to vyper/semantics/validation
 def is_return_from_function(node):
     if isinstance(node, vy_ast.Expr) and node.get("value.func.id") == "selfdestruct":
         return True
-    if isinstance(node, vy_ast.Return):
-        return True
-    elif isinstance(node, vy_ast.Raise):
-        return True
-    else:
-        return False
+    return isinstance(node, (vy_ast.Return, vy_ast.Raise))
 
 
 def check_single_exit(fn_node):

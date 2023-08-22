@@ -13,21 +13,20 @@ from vyper.utils import cached_property
 class GlobalContext:
     def __init__(self):
         # Oh jesus, just leave this. So confusing!
-        self._contracts = dict()
-        self._interfaces = dict()
-        self._interface = dict()
+        self._contracts = {}
+        self._interfaces = {}
+        self._interface = {}
         self._implemented_interfaces = set()
 
-        self._structs = dict()
-        self._events = list()
-        self._globals = dict()
-        self._function_defs = list()
+        self._structs = {}
+        self._events = []
+        self._globals = {}
+        self._function_defs = []
         self._nonrentrant_counter = 0
-        self._nonrentrant_keys = dict()
+        self._nonrentrant_keys = {}
 
     # Parse top-level functions and variables
     @classmethod
-    # TODO rename me to `from_module`
     def get_global_context(
         cls,
         vyper_module: "vy_ast.Module",
@@ -49,11 +48,8 @@ class GlobalContext:
             elif isinstance(item, vy_ast.EventDef):
                 continue
 
-            # Statements of the form:
-            # variable_name: type
             elif isinstance(item, vy_ast.AnnAssign):
                 global_ctx.add_globals_and_events(item)
-            # Function definitions
             elif isinstance(item, vy_ast.FunctionDef):
                 global_ctx._function_defs.append(item)
             elif isinstance(item, vy_ast.ImportFrom):
@@ -71,12 +67,12 @@ class GlobalContext:
                     global_ctx._interfaces[assigned_name] = built_in_interfaces[
                         interface_name
                     ].copy()
-                else:
-                    if interface_name not in interface_codes:
-                        raise StructureException(f"Unknown interface {interface_name}", item)
+                elif interface_name in interface_codes:
                     global_ctx._interfaces[assigned_name] = extract_sigs(
                         interface_codes[interface_name], interface_name
                     )
+                else:
+                    raise StructureException(f"Unknown interface {interface_name}", item)
             elif isinstance(item, vy_ast.Import):
                 interface_name = item.alias
                 if interface_name in global_ctx._interfaces:
@@ -104,25 +100,24 @@ class GlobalContext:
         members = []
 
         for item in node.body:
-            if isinstance(item, vy_ast.AnnAssign):
-                member_name = item.target
-                member_type = item.annotation
-                # Check well-formedness of member names
-                if not isinstance(member_name, vy_ast.Name):
-                    raise InvalidType(
-                        f"Invalid member name for struct {node.name}, needs to be a valid name. ",
-                        item,
-                    )
-                # Check well-formedness of member types
-                # Note this kicks out mutually recursive structs,
-                # raising an exception instead of stackoverflow.
-                # A struct must be defined before it is referenced.
-                # This feels like a semantic step and maybe should be pushed
-                # to a later compilation stage.
-                self.parse_type(member_type)
-                members.append((member_name, member_type))
-            else:
+            if not isinstance(item, vy_ast.AnnAssign):
                 raise StructureException("Structs can only contain variables", item)
+            member_name = item.target
+            member_type = item.annotation
+            # Check well-formedness of member names
+            if not isinstance(member_name, vy_ast.Name):
+                raise InvalidType(
+                    f"Invalid member name for struct {node.name}, needs to be a valid name. ",
+                    item,
+                )
+            # Check well-formedness of member types
+            # Note this kicks out mutually recursive structs,
+            # raising an exception instead of stackoverflow.
+            # A struct must be defined before it is referenced.
+            # This feels like a semantic step and maybe should be pushed
+            # to a later compilation stage.
+            self.parse_type(member_type)
+            members.append((member_name, member_type))
         return members
 
     # A contract is a list of functions.
@@ -209,4 +204,4 @@ class GlobalContext:
 
     @cached_property
     def immutable_section_bytes(self):
-        return sum([imm.size * 32 for imm in self.immutables])
+        return sum(imm.size * 32 for imm in self.immutables)

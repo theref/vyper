@@ -57,7 +57,7 @@ def parse_external_interfaces(external_interfaces, global_ctx):
                 # NOTE: Can't import enums here because of circular import
                 and _def.body[0].value.id in ("pure", "view", "nonpayable", "payable")
             ):
-                constant = True if _def.body[0].value.id in ("view", "pure") else False
+                constant = _def.body[0].value.id in ("view", "pure")
             else:
                 raise StructureException("state mutability of call type must be specified", _def)
 
@@ -122,7 +122,7 @@ def _runtime_ir(runtime_functions, all_sigs, global_ctx):
     # for some reason, somebody may want to deploy a contract with no
     # external functions, or more likely, a "pure data" contract which
     # contains immutables
-    if len(external_functions) == 0:
+    if not external_functions:
         # TODO: prune internal functions in this case?
         runtime = ["seq"] + list(internal_functions_map.values())
         return runtime, internal_functions_map
@@ -142,7 +142,7 @@ def _runtime_ir(runtime_functions, all_sigs, global_ctx):
         func_ir = generate_ir_for_function(func_ast, all_sigs, global_ctx, False)
         selector_section.append(func_ir)
 
-    if batch_payable_check:
+    if skip_nonpayable_check:
         selector_section.append(["assert", ["iszero", "callvalue"]])
 
     for func_ast in nonpayables:
@@ -223,12 +223,13 @@ def generate_ir_for_module(global_ctx: GlobalContext) -> Tuple[IRnode, IRnode, F
         deploy_code.append(["deploy", init_mem_used, runtime, immutables_len])
 
         # internal functions come after everything else
-        for f in init_function._metadata["type"].called_functions:
-            deploy_code.append(internal_functions[f.name])
-
-    else:
-        if immutables_len != 0:
-            raise CompilerPanic("unreachable")
+        deploy_code.extend(
+            internal_functions[f.name]
+            for f in init_function._metadata["type"].called_functions
+        )
+    elif immutables_len == 0:
         deploy_code.append(["deploy", 0, runtime, 0])
 
+    else:
+        raise CompilerPanic("unreachable")
     return IRnode.from_list(deploy_code), IRnode.from_list(runtime), sigs

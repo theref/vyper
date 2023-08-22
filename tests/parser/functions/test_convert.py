@@ -149,13 +149,7 @@ def _cases_for_int(typ):
 
     lo, hi = info.bounds
 
-    ret = [lo - 1, lo, lo + 1, -1, 0, 1, hi - 1, hi, hi + 1]
-
-    # random cases cause reproducibility issues. TODO fixme
-    # NUM_RANDOM_CASES = 6
-    # ret.extend(random.randrange(lo, hi) for _ in range(NUM_RANDOM_CASES))
-
-    return ret
+    return [lo - 1, lo, lo + 1, -1, 0, 1, hi - 1, hi, hi + 1]
 
 
 def _cases_for_decimal(typ):
@@ -298,10 +292,7 @@ def _signextend(val_bytes, bits):
 
 def _convert_decimal_to_int(val, o_typ):
     # note special behavior for decimal: catch OOB before truncation.
-    if not SizeLimits.in_bounds(o_typ, val):
-        return None
-
-    return round_towards_zero(val)
+    return round_towards_zero(val) if SizeLimits.in_bounds(o_typ, val) else None
 
 
 def _convert_int_to_decimal(val, o_typ):
@@ -309,10 +300,7 @@ def _convert_int_to_decimal(val, o_typ):
     ret = Decimal(val)
     # note: SizeLimits.in_bounds is for the EVM int value, not the python value
     lo, hi = detail.info.decimal_bounds
-    if not lo <= ret <= hi:
-        return None
-
-    return ret
+    return None if not lo <= ret <= hi else ret
 
 
 def _py_convert(val, i_typ, o_typ):
@@ -324,10 +312,7 @@ def _py_convert(val, i_typ, o_typ):
     o_detail = _parse_type(o_typ)
 
     if i_detail.type_class == "int" and o_detail.type_class == "int":
-        if not SizeLimits.in_bounds(o_typ, val):
-            return None
-        return val
-
+        return None if not SizeLimits.in_bounds(o_typ, val) else val
     if i_typ == "decimal" and o_typ in INTEGER_TYPES:
         return _convert_decimal_to_int(val, o_typ)
 
@@ -362,10 +347,7 @@ def _py_convert(val, i_typ, o_typ):
 
         ret = _from_bits(val_bits, o_typ)
 
-        if o_typ == "address":
-            return checksum_encode(ret)
-        return ret
-
+        return checksum_encode(ret) if o_typ == "address" else ret
     except _OutOfBounds:
         return None
 
@@ -419,10 +401,11 @@ def generate_passing_cases():
     ret = []
     for i_typ, o_typ in convertible_pairs():
         cases = cases_for_pair(i_typ, o_typ)
-        for c in cases:
-            # only add convertible cases
-            if _py_convert(c, i_typ, o_typ) is not None:
-                ret.append((i_typ, o_typ, c))
+        ret.extend(
+            (i_typ, o_typ, c)
+            for c in cases
+            if _py_convert(c, i_typ, o_typ) is not None
+        )
     return sorted(ret)
 
 
@@ -430,16 +413,18 @@ def generate_reverting_cases():
     ret = []
     for i_typ, o_typ in convertible_pairs():
         cases = cases_for_pair(i_typ, o_typ)
-        for c in cases:
-            if _py_convert(c, i_typ, o_typ) is None:
-                ret.append((i_typ, o_typ, c))
+        ret.extend(
+            (i_typ, o_typ, c)
+            for c in cases
+            if _py_convert(c, i_typ, o_typ) is None
+        )
     return sorted(ret)
 
 
 def _vyper_literal(val, typ):
     detail = _parse_type(typ)
     if detail.type_class == "bytes":
-        return "0x" + val.hex()
+        return f"0x{val.hex()}"
     if detail.type_class == "decimal":
         tmp = val
         val = val.quantize(DECIMAL_EPSILON)
@@ -646,14 +631,7 @@ def foo() -> {o_typ}:
         if o_typ != "bytes32":
             c1_exception = TypeMismatch
 
-    # compile-time folding not implemented for these:
-    skip_c1 = False
-    # if o_typ.startswith("int") and i_typ == "address":
-    #    skip_c1 = True
-
-    if o_typ.startswith("bytes"):
-        skip_c1 = True
-
+    skip_c1 = bool(o_typ.startswith("bytes"))
     # if o_typ in ("address", "bytes20"):
     #    skip_c1 = True
 

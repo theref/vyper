@@ -290,10 +290,7 @@ def _optimize_arith(binop, args, ann, parent_op):
         or (args[1].is_complex_ir and not _deep_contains(new_args, args[1]))
     )
 
-    if rollback:
-        return None
-
-    return new_val, new_args, new_ann
+    return None if rollback else (new_val, new_args, new_ann)
 
 
 def optimize(node: IRnode, parent: Optional[IRnode] = None) -> IRnode:
@@ -336,12 +333,6 @@ def optimize(node: IRnode, parent: Optional[IRnode] = None) -> IRnode:
             optimize_more = True
             value, argz, annotation = res
 
-    ###
-    # BITWISE OPS
-    ###
-    # note, don't optimize these too much as these kinds of expressions
-    # may be hand optimized for codesize. we can optimize bitwise ops
-    # more, once we have a pipeline which optimizes for codesize.
     elif value in ("shl", "shr", "sar") and argz[0].value == 0:
         # x >> 0 == x << 0 == x
         optimize_more = True
@@ -349,7 +340,6 @@ def optimize(node: IRnode, parent: Optional[IRnode] = None) -> IRnode:
         annotation = argz[1].annotation
         argz = argz[1].args
 
-    # TODO just expand this
     elif node.value == "ceil32" and _is_int(argz[0]):
         t = argz[0]
         annotation = f"ceil32({t.value})"
@@ -390,9 +380,8 @@ def optimize(node: IRnode, parent: Optional[IRnode] = None) -> IRnode:
                 f"assertion found to fail at compile time. (hint: did you mean `raise`?) {node}",
                 source_pos,
             )
-        else:
-            value = "seq"
-            argz = []
+        value = "seq"
+        argz = []
 
     # NOTE: this is really slow (compile-time).
     # ideal would be to optimize the tree in-place

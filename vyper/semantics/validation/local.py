@@ -181,12 +181,12 @@ class FunctionNodeVisitor(VyperNodeVisitorBase):
         self.func = fn_node._metadata["type"]
         self.annotation_visitor = StatementAnnotationVisitor(fn_node, namespace)
         self.expr_visitor = _LocalExpressionVisitor()
-        namespace.update(self.func.arguments)
+        namespace |= self.func.arguments
 
         for node in fn_node.body:
             self.visit(node)
-        if self.func.return_type:
-            if not check_for_terminus(fn_node.body):
+        if not check_for_terminus(fn_node.body):
+            if self.func.return_type:
                 raise FunctionDeclarationException(
                     f"Missing or unmatched return statements in function '{fn_node.name}'",
                     fn_node,
@@ -210,11 +210,10 @@ class FunctionNodeVisitor(VyperNodeVisitorBase):
                     "not allowed to query contract or environment variables in pure functions",
                     node_list[0],
                 )
-        if self.func.mutability is not StateMutability.PAYABLE:
-            node_list = fn_node.get_descendants(
-                vy_ast.Attribute, {"value.id": "msg", "attr": "value"}
-            )
-            if node_list:
+        if node_list := fn_node.get_descendants(
+            vy_ast.Attribute, {"value.id": "msg", "attr": "value"}
+        ):
+            if self.func.mutability is not StateMutability.PAYABLE:
                 raise NonPayableViolation(
                     "msg.value is not allowed in non-payable functions", node_list[0]
                 )
@@ -389,9 +388,7 @@ class FunctionNodeVisitor(VyperNodeVisitorBase):
             raise InvalidType("Not an iterable type", node.iter)
 
         if isinstance(node.iter, (vy_ast.Name, vy_ast.Attribute)):
-            # check for references to the iterated value within the body of the loop
-            assign = _check_iterator_modification(node.iter, node)
-            if assign:
+            if assign := _check_iterator_modification(node.iter, node):
                 raise ImmutableViolation("Cannot modify array during iteration", assign)
 
         # Check if `iter` is a storage variable. get_descendants` is used to check for
@@ -450,7 +447,7 @@ class FunctionNodeVisitor(VyperNodeVisitorBase):
                 except (TypeMismatch, InvalidOperation) as exc:
                     for_loop_exceptions.append(exc)
 
-        if len(set(str(i) for i in for_loop_exceptions)) == 1:
+        if len({str(i) for i in for_loop_exceptions}) == 1:
             # if every attempt at type checking raised the same exception
             raise for_loop_exceptions[0]
 
